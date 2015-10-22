@@ -21,7 +21,7 @@
             <span class="icon-bar"></span>
             <span class="icon-bar"></span>
           </button>
-          <div class="brand" style="background: transparent url('<%=trello.logo%>') no-repeat left -5px; background-size: 200px auto">
+          <div class="brand" style="background: transparent url('<%=trello.logo%>') no-repeat left -5px; background-size: 100px auto">
           </div>
         </div>
         <div class="navbar-collapse collapse">
@@ -46,7 +46,9 @@
       if $sprint.sprint_card
         if $sprint.sprint_card.name =~ /^Sprint (\d+)/
           sprint_num = $1.to_i
+          puts "Sprint number: #{sprint_num}"
           sprint_end = $sprint.sprint_card.due.to_date
+          puts "Sprint due date: #{sprint_end}"
           sprint_end = sprint_end.next(trello.sprint_end_day.to_sym) unless sprint_end.wday == Date.new.next(trello.sprint_end_day.to_sym).wday
           sprint_begin = sprint_end
           trello.sprint_length_in_weeks.times{sprint_begin = sprint_begin.previous(trello.sprint_start_day.to_sym)}

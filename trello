@@ -43,6 +43,17 @@ def clear_epic_refs(epic_card, trello)
   trello.clear_checklist_refs(epic_card, EPIC_REFERENCED_STORIES_NAME, tags)
 end
 
+def clear_story_refs(story_card, trello)
+  tags = []
+  story_card.name.scan(/\[[^\]]+\]/).each do |tag|
+    if tag != FUTURE_TAG
+      tags << tag
+    end
+  end
+  trello.clear_checklist_refs(story_card, FUTURE_STORY_REFERENCED_TASK_NAME, [FUTURE_TAG])
+  trello.clear_checklist_refs(story_card, STORY_REFERENCED_TASK_NAME, tags)
+end
+
 $tag_to_label_color = {
   'documentation' => 'green',
   'tc-approved' => 'yellow',
@@ -52,13 +63,17 @@ $tag_to_label_color = {
 }
 
 LINKS = {'roadmap_overview' => 'Roadmap Overview',
+         'product_overview' => 'Product Overview',
          'sprints_overview' => 'Sprints Overview',
          'previous_sprints_overview' => 'Previous Sprints Overview',
-         'labels_overview' => 'Labels Overview',
-         'sprint_schedule' => 'Sprint Schedule'}
+         'sprint_schedule' => 'Sprint Schedule',
+         'sprints_detail' => 'Sprints Detail',
+         'sprint_review' => 'Sprint Review'}
 
 EPIC_REFERENCED_STORIES_NAME = "Scenarios"
 FUTURE_EPIC_REFERENCED_STORIES_NAME = "Future Scenarios"
+STORY_REFERENCED_TASK_NAME = "Tasks"
+FUTURE_STORY_REFERENCED_TASK_NAME = "Future Tasks"
 FUTURE_TAG = '[future]'
 
 trello = load_conf(TrelloHelper, CONFIG.trello, true)
@@ -68,6 +83,7 @@ command :list do |c|
 
   c.option "--list LIST_NAME", "Restrict to a particular list"
   c.option "--team TEAM_NAME (#{trello.teams.keys.join('|')})", "Restrict to a team"
+  c.option "--product PRODUCT_NAME", "Restrict to the product board"
   c.option "--card-ref SCOPE_TEAM_ID", "Get a single card Ex: #{trello.teams.values.first.keys.first}_1"
 
   c.description = "An assortment of Trello queries"
@@ -82,7 +98,10 @@ command :list do |c|
         exit 1
       end
     else
-      if options.team
+      if options.product
+        boards = []
+        boards << trello.product_board
+      elsif options.team
         boards = trello.team_boards(options.team)
       else
         boards = trello.org_boards
@@ -220,6 +239,39 @@ command :generate_sprints_overview do |c|
   end
 end
 
+command :generate_sprints_detail do |c|
+  c.syntax = "#{name} generate_sprints_detail"
+
+  c.option "--out OUT_FILE", "The file to output Ex: /tmp/sprints_detail.html"
+  c.option "--sprints NUM", "The number of sprints to show"
+  c.option "--offset NUM", "The number of sprints to offset from the latest"
+
+  c.description = "Generate the sprints detail"
+  c.action do |args, options|
+    options.out ||= '/tmp/sprints_detail.html'
+    options.sprints = options.sprints ? options.sprints.to_i : 8
+    options.offset = options.offset ? options.offset.to_i : 0
+
+    erb = ERB.new(File.open('templates/sprints_detail.erb', "rb").read)
+    File.open(options.out, 'w') {|f| f.write(erb.result(binding)) }
+  end
+end
+
+command :generate_sprint_review do |c|
+  c.syntax = "#{name} generate_sprint_review"
+
+  c.option "--out OUT_FILE", "The file to output Ex: /tmp/sprints_review.html"
+
+  c.description = "Generate the sprint review"
+  c.action do |args, options|
+    options.out ||= '/tmp/sprint_review.html'
+
+    erb = ERB.new(File.open('templates/sprint_review.erb', "rb").read)
+    File.open(options.out, 'w') {|f| f.write(erb.result(binding)) }
+  end
+end
+
+
 command :generate_sprint_schedule do |c|
   c.syntax = "#{name} generate_sprint_schedule"
 
@@ -282,7 +334,8 @@ command :update do |c|
   c.option "--add-doc-checklists", "Add documentation team tasks"
   c.option "--add-doc-cards", "Add documentation cards for documentation labeled dev cards"
   c.option "--update-bug-tasks", "Update closed/verified bug tasks"
-  c.option "--update-roadmap", "Update the roadmap board with progress from teams.  Note: Existing checklist items will be removed with matching [tag]s."
+  c.option "--update-roadmap", "Update the roadmap board with progress from the product.  Note: Existing checklist items will be removed with matching [tag]s."
+  c.option "--update-product", "Update the product board with progress from teams.  Note: Existing checklist items will be removed with matching [tag]s."
 
   c.description = "An assortment of Trello modification utilities"
   c.action do |args, options|
@@ -305,7 +358,9 @@ command :update do |c|
         puts tag_to_epic.keys.pretty_inspect
         epic_stories_by_epic = {}
         (1..2).each do |accepted_pass|
-          trello.boards.each do |board_id, board|
+          #trello.boards.each do |board_id, board|
+          board = trello.product_board
+          if board
             if roadmap_board.prefs['permissionLevel'] == 'org' || roadmap_board.prefs['permissionLevel'] == board.prefs['permissionLevel']
               puts "\nBoard Name: #{board.name}"
               all_lists = trello.target(trello.board_lists(board, :filter => [:all]))
@@ -359,11 +414,26 @@ command :update do |c|
                     card_tags = card.name.scan(/\[[^\]]+\]/)
                     future = card_tags.include?(FUTURE_TAG) ? FUTURE_EPIC_REFERENCED_STORIES_NAME : EPIC_REFERENCED_STORIES_NAME
                     card_tags.each do |card_tag|
-                      epic = tag_to_epic[card_tag]
+                      trello.assign_label(card, card_tag)
+                      parsed_tag = card_tag.split(':')[0] + ']'
+                      epic = tag_to_epic[parsed_tag]
                       if epic
-                        if (roadmap_board.prefs['permissionLevel'] == 'org' && tag_to_epics[card_tag].length == 1) || (roadmap_board.prefs['permissionLevel'] == board.prefs['permissionLevel'])
+                        if (roadmap_board.prefs['permissionLevel'] == 'org' && tag_to_epics[parsed_tag].length == 1) || (roadmap_board.prefs['permissionLevel'] == board.prefs['permissionLevel'])
                           epic_stories_by_epic[epic.id] = [] unless epic_stories_by_epic[epic.id]
                           epic_stories_by_epic[epic.id] << [epic, card, list, board, future, accepted]
+                          stories_checklist = trello.checklist(epic, card_tags.include?(FUTURE_TAG) ? FUTURE_EPIC_REFERENCED_STORIES_NAME : EPIC_REFERENCED_STORIES_NAME)
+                          if stories_checklist
+                            puts "Adding #{card.url} to #{epic.name}"
+                            (1..3).each do |i|
+                              begin
+                                stories_checklist.add_item("[#{card.name}](#{card.url}) (#{list.name}) [#{board.name}](#{board.url})", accepted, 'bottom')
+                                break
+                              rescue => e
+                                puts "Error adding checklist: #{e.message}"
+                                raise if i == 3
+                              end
+                            end
+                          end
                         end
                       end
                     end
@@ -382,6 +452,7 @@ command :update do |c|
         end
         epic_stories_by_epic.each_value do |epic_stories|
           first_epic_story = epic_stories.first
+          puts "first_epic_story #{first_epic_story[0]}"
           if first_epic_story
             clear_epic_refs(first_epic_story[0], trello)
             puts "\nAdding cards to #{first_epic_story[0].name}:"
@@ -399,6 +470,143 @@ command :update do |c|
                 (1..3).each do |i|
                   begin
                     stories_checklist.add_item("[#{card.name}](#{card.url}) (#{list.name}) (#{board.name})", accepted, 'bottom')
+                    break
+                  rescue => e
+                    puts "Error adding checklist: #{e.message}"
+                    raise if i == 3
+                    sleep 10
+                  end
+                end
+              end
+            end
+          end
+        end
+      end
+    end
+    if options.update_product
+      tag_to_story = trello.tag_to_epics
+      product_board = trello.product_board
+      if product_board
+        product_lists = trello.board_lists(product_board)
+        tag_to_story = {}
+        product_lists.each do |product_list|
+          product_list.cards.each do |product_card|
+            product_card.name.scan(/\[[^\]]+\]/).each do |tag|
+              if tag != FUTURE_TAG
+                tag_to_story[tag] = product_card
+              end
+            end
+          end
+        end
+        puts 'Tags:'
+        puts tag_to_story.keys.pretty_inspect
+        user_stories_by_story = {}
+        (1..2).each do |accepted_pass|
+          trello.boards.each do |board_id, board|
+            if product_board.prefs['permissionLevel'] == 'org' || product_board.prefs['permissionLevel'] == board.prefs['permissionLevel']
+              puts "\nBoard Name: #{board.name}"
+              all_lists = trello.target(trello.board_lists(board, :filter => [:all]))
+              new_list = nil
+              backlog_list = nil
+              next_list = nil
+              in_progress_list = nil
+              complete_list = nil
+              previous_sprint_lists = []
+              other_lists = []
+              all_lists.each do |l|
+                case l.name
+                when 'New'
+                  new_list = l
+                when 'Backlog'
+                  backlog_list = l
+                when 'Next'
+                  next_list = l
+                when 'In Progress'
+                  in_progress_list = l
+                when 'Complete'
+                  complete_list = l
+                when /^Sprint \d+/
+                  previous_sprint_lists << l
+                else
+                  other_lists << l
+                end
+              end
+              i = 0
+              lists = []
+              [complete_list, in_progress_list, next_list, backlog_list, new_list].each do |l|
+                if !l.nil?
+                  lists[i] = l
+                  i += 1
+                end
+              end
+              previous_sprint_lists = previous_sprint_lists.sort_by { |l| l.name.match('^Sprint (\d+)')[1].to_i }
+              lists += previous_sprint_lists
+              lists += other_lists
+              lists.each do |list|
+                accepted = (list.name.match('^Sprint \d+') || list.name == 'Complete') ? true : false
+                next if (accepted && accepted_pass == 1) || (!accepted && accepted_pass == 2)
+                cards = trello.list_cards(list)
+                if !cards.empty?
+                  puts "\n  List: #{list.name}  (#cards: #{cards.length})"
+                  cards.each_with_index do |card, index|
+                    card_tags = card.name.scan(/\[[^\]]+\]/)
+                    future = card_tags.include?(FUTURE_TAG) ? FUTURE_STORY_REFERENCED_TASK_NAME : STORY_REFERENCED_TASK_NAME
+                    card_tags.each do |card_tag|
+                      trello.assign_label(card, card_tag)
+                      story = tag_to_story[card_tag]
+                      if story
+                        if (product_board.prefs['permissionLevel'] == 'org') || (product_board.prefs['permissionLevel'] == board.prefs['permissionLevel'])
+                          user_stories_by_story[story.id] = [] unless user_stories_by_story[story.id]
+                          user_stories_by_story[story.id] << [story, card, list, board, future, accepted]
+                          stories_checklist = trello.checklist(story, card_tags.include?(FUTURE_TAG) ? FUTURE_EPIC_REFERENCED_STORIES_NAME : EPIC_REFERENCED_STORIES_NAME)
+                          if stories_checklist
+                            puts "Adding #{card.url} to #{epic.name}"
+                            (1..3).each do |i|
+                              begin
+                                stories_checklist.add_item("[#{card.name}](#{card.url}) (#{list.name}) [#{board.name}](#{board.url})", accepted, 'bottom')
+                                break
+                              rescue => e
+                                puts "Error adding checklist: #{e.message}"
+                                raise if i == 3
+                              end
+                            end
+                          end
+                        end
+                      end
+                    end
+                  end
+                end
+              end
+            end
+          end
+        end
+        product_lists.each do |product_list|
+          product_list.cards.each do |product_card|
+            unless user_stories_by_story[product_card.id]
+              clear_story_refs(product_card, trello)
+            end
+          end
+        end
+        user_stories_by_story.each_value do |user_stories|
+          first_user_story = user_stories.first
+          if first_user_story
+            clear_story_refs(first_user_story[0], trello)
+            puts "\nAdding cards to #{first_user_story[0].name}:"
+            user_stories.each do |user_story|
+              story = user_story[0]
+              card = user_story[1]
+              list = user_story[2]
+              board = user_story[3]
+              future = user_story[4]
+              complete = user_story[5]
+
+              stories_checklist = trello.checklist(story, future)
+              if stories_checklist
+                puts "Adding #{card.id}"
+                (1..3).each do |i|
+                  begin
+                    puts "complete is #{complete}"
+                    stories_checklist.add_item("[#{card.name}](#{card.url}) (#{list.name}) (#{board.name})", complete, 'bottom')
                     break
                   rescue => e
                     puts "Error adding checklist: #{e.message}"
@@ -477,7 +685,9 @@ command :update do |c|
           end
         end
       end
-      trello.boards.each do |board_id, board|
+      #trello.boards.each do |board_id, board|
+      board = trello.product_board
+      if board
         puts "\nBoard Name: #{board.name}"
         lists = trello.target(trello.board_lists(board, :filter => [:open]))
         lists.each do |list|
@@ -491,7 +701,7 @@ command :update do |c|
                     labels = trello.card_labels(card)
                     checklists = []
                     checklists << 'Tasks' if options.add_task_checklists
-                    checklists << 'Bugs' if options.add_bug_checklists && !labels.map{|x| x.name }.include?('no-qe')
+                    checklists << 'Bugs' if options.add_bug_checklists && !card.labels.map{|x| x.name }.include?('no-qe')
 
                     if options.add_doc_cards && labels.map{|x| x.name }.include?('documentation') && doc_descriptions.any?
                       found = false
@@ -518,7 +728,7 @@ command :update do |c|
                     if checklists.any?
                       puts "Adding #{checklists.pretty_inspect.chomp} to #{card.name}"
                       checklists.each do |checklist_name|
-                        checklist = Trello::Checklist.create({:name => checklist_name, :board_id => board.id})
+                        checklist = Trello::Checklist.create({:name => checklist_name, :board_id => board.id, :card_id => card.id})
                         card.add_checklist(checklist)
                       end
                     end

@@ -7,8 +7,7 @@ class TrelloHelper
                 :public_roadmap_id, :public_roadmap_board, :documentation_board,
                 :documentation_next_list, :docs_planning_id, :organization_name,
                 :sprint_length_in_weeks, :sprint_start_day, :sprint_end_day, :logo,
-                :docs_new_list_name, :roadmap_board_lists
-
+                :docs_new_list_name, :roadmap_board_lists, :product_id, :product_board
   attr_accessor :boards
 
   DEFAULT_RETRIES = 3
@@ -25,6 +24,13 @@ class TrelloHelper
       config.oauth_token = @oauth_token
       config.oauth_token_secret = @oauth_token_secret
     end
+  end
+
+  def product_board
+    if product_id
+      @product_board = Trello::Board.find(product_id) unless @product_board
+    end
+    @product_board
   end
 
   def board_ids
@@ -168,7 +174,10 @@ class TrelloHelper
     if cl
       cl.items.each do |item|
         tags.each do |tag|
-          if item.name.include?(tag) || item.name =~ /\[.*\]\(https?:\/\/trello\.com\/[^\)]+\) \([^\)]+\) \([^\)]+\)/
+          puts "item is #{item.name}"
+          puts "tag is #{tag}"
+          product_tag = tag.sub(']',':')
+          if item.name.include?(tag) || item.name =~ /\[.*\]\(https?:\/\/trello\.com\/[^\)]+\) \([^\)]+\) \([^\)]+\)/ || item.name.include?(product_tag)
             begin
               trello_do('checklist') do
                 cl.delete_checklist_item(item.id)
@@ -183,7 +192,7 @@ class TrelloHelper
     end
     unless cl
       puts "Adding #{checklist_name} to #{card.name}"
-      cl = Trello::Checklist.create({:name => checklist_name, :board_id => roadmap_id})
+      cl = Trello::Checklist.create({:name => checklist_name, :board_id => roadmap_id, :card_id => card.id})
       card.add_checklist(cl)
     end
   end
@@ -199,6 +208,28 @@ class TrelloHelper
     trello_do('labels') do
       labels = card.labels
       return labels
+    end
+  end
+
+  def assign_label(card, card_tag)
+    if card_tag
+			label = card_tag.gsub(/[\[\]]/, "").split(':')[0]
+			trello_do('labels') do
+				card_labels = card.labels.select{ |card_label| card_label.name == label }
+				if card_labels.length == 0
+					card_board = Trello::Board.find(card.board_id)
+					card_board_labels = card_board.labels(false).target
+					target_board_labels = card_board_labels.select{ |board_label| board_label.name == label }
+					if target_board_labels.length > 0
+						board_label = card_board_labels.select{ |board_label| board_label.name == label }.first 
+						card.add_label(board_label)
+					else
+						new_label = Trello::Label.create(:name => label, :board_id => card.board_id)
+						card.add_label(new_label)
+					end
+				end
+				return card
+			end
     end
   end
 

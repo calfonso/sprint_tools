@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<title><%= trello.organization_name %> Sprints Overview</title>
+<title><%= trello.organization_name %> Sprints Detail</title>
 <script type='text/javascript' src='https://ajax.googleapis.com/ajax/libs/jquery/1.8.1/jquery.min.js?ver=3.8.1'></script>
 <link href="https://netdna.bootstrapcdn.com/bootstrap/3.1.1/css/bootstrap.min.css" type="text/css" rel="stylesheet" media="screen">
 <script src="https://netdna.bootstrapcdn.com/bootstrap/3.1.1/js/bootstrap.min.js"></script>
@@ -14,6 +14,14 @@
 .table>tbody>tr.in-progress>th {
   background-color: #94cc75;
   border-top: 1px solid #94cc75;
+}
+.table>tbody>tr.complete>th {
+  background-color: #94a55;
+  border-top: 1px solid #94ac55;
+}
+.table>tbody>tr.accepted>th {
+  background-color: #94cc35;
+  border-top: 1px solid #94cc35;
 }
 .table>tbody>tr.next>th {
   background-color: #c4e3b3;
@@ -49,7 +57,7 @@
         <div class="navbar-collapse collapse">
           <ul class="nav navbar-nav">
               <% LINKS.each do |page_name, page_title|
-                if page_name != (options.offset > 0 ? 'previous_sprints_overview' : 'sprints_overview') %>
+		if page_name != 'sprints_detail' %>
                   <li><a href='<%=page_name%>.html'><%=page_title%></a></li>
                 <%else%>
                   <li><a class="active" href='<%=page_name%>.html'><%=page_title%></a></li>
@@ -62,14 +70,17 @@
 
   <div class="container">
 
-    <h2 class="visible-xs"><%= trello.organization_name %> Sprints Overview</h2>
+    <h2 class="visible-xs"><%= trello.organization_name %> Sprints Detail</h2>
 
 <%
       sprint_data = {}
+      team_url = {}
       trello.teams.keys.map{ |team_name| team_name.to_s }.each do |team_name|
         sprint_data[team_name] = {}
+        team_url[team_name] = {}
         trello.team_boards(team_name).each do |board|
-          trello.target(trello.board_lists(board, :filter => [:all])).each do |list|
+          team_url[team_name] = board.url
+          board.lists(:filter => [:all]).target.each do |list|
             list_name = list.name
             sprint_id = nil
             if list_name =~ /^Sprint (\d+)/
@@ -78,9 +89,13 @@
               sprint_id = 9999999
             elsif (list_name == 'Next')
               sprint_id = 9999998
-            elsif (list_name == 'In Progress' || list_name == 'Complete' || list_name == 'Accepted')
+            elsif (list_name == 'In Progress')
               sprint_id = 9999997
-            end
+            elsif (list_name == 'Complete')
+              sprint_id = 9999996
+            elsif (list_name == 'Accepted')
+              sprint_id = 9999995
+	    end
             if sprint_id
               cards = trello.list_cards(list)
               unless cards.empty?
@@ -96,20 +111,19 @@
         end
       end
       sprint_data.each do |team_name, sprint_map|
-        team_total_sizing = 0
-        previous_sprints_count = 0
         sprints = []
+        board_url = team_url[team_name]
         sprint_map.each do |sprint_id, cards|
           sprints << {sprint_id => cards}
         end
         sprints = sprints.sort_by { |sprint| sprint.keys.first }
-        if options.offset
-          sprints = sprints.last(options.sprints + options.offset).first(options.sprints)
-        else
-          sprints = sprints.last(options.sprints)
-        end
+#        if options.offset
+#          sprints = sprints.last(options.sprints + options.offset).first(options.sprints)
+#        else
+#          sprints = sprints.last(options.sprints)
+#        end
 %>
-<h3 style="text-transform:uppercase"><%=team_name%></h3>
+<h3 style="text-transform:uppercase"><a href="<%=board_url%>"><%=team_name%></a></h3>
 <div class="table-responsive">
 <table class="table table-condensed table-rows">
 
@@ -118,18 +132,12 @@
         sprint_end = nil
         sprints.each do |sprint|
           sprint_num = sprint.keys.first
-          previous_sprints_count += 1 if sprint_num < 9999990
           sprint.values.first.each do |card|
             if card.name =~ /^Sprint (\d+)/
               sprint_end = card.due.to_date unless card.due == nil
               unless sprint_begin
                 sprint_begin = sprint_end
                 trello.sprint_length_in_weeks.times{sprint_begin = sprint_begin.previous(trello.sprint_start_day.to_sym)}
-              end
-            elsif sprint_num < 9999990 && card.name =~ /\((\d+|\?)\)(.*)/
-              sizing = $1
-              if sizing != '?'
-                team_total_sizing += sizing.to_i
               end
             end
           end
@@ -145,16 +153,24 @@
             sprint_name = "In Progress"
             sprint_dates = "(#{sprint_begin} - #{sprint_end})"
             sprint_in_progress = "in-progress"
+          elsif sprint_num == 9999996
+            sprint_name = "Complete"
+            sprint_complete = "complete"
+          elsif sprint_num == 9999995
+            sprint_name = "Accepted"
+            sprint_accepted = "accepted"
           else
             sprint_name = "Sprint #{sprint_num}"
             sprint_dates = "(#{sprint_begin} - #{sprint_end})"
           end
 %>
-<tr class="<%=sprint_backlog%> <%=sprint_in_progress%> <%=sprint_next%>">
+<tr class="<%=sprint_backlog%> <%=sprint_in_progress%> <%=sprint_next%> <%=sprint_complete%> <%=sprint_accepted%> ">
 
 <th><%=sprint_name%><div class="sprint-date"><%=sprint_dates%></div></th>
 <%
-          sprint_begin = sprint_end.next(trello.sprint_start_day)
+puts team_name
+puts sprint_name
+          sprint_begin = sprint_end.next(trello.sprint_start_day) unless sprint_end.nil?
 
 %>
 
@@ -176,13 +192,10 @@
         end
 %>
 </table>
-
-<i>Velocity: <%=(previous_sprints_count > 0) ? team_total_sizing/previous_sprints_count : '0'%> / sprint</i><br />
-
 </div>
 
- <br />
- <br />
+
+ </section>
 <%
       end
 %>

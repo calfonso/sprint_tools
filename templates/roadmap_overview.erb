@@ -21,7 +21,7 @@
             <span class="icon-bar"></span>
             <span class="icon-bar"></span>
           </button>
-          <div class="brand" style="background: transparent url('<%=trello.logo%>') no-repeat left -5px; background-size: 200px auto">
+          <div class="brand" style="background: transparent url('<%=trello.logo%>') no-repeat left -5px; background-size: 100px auto">
           </div>
         </div>
         <div class="navbar-collapse collapse">
@@ -65,20 +65,25 @@ Corresponding Private Roadmap Board Epic: <a href='<%=secondary_epic_card.url%>'
           stories_checklist = trello.checklist(epic_card, EPIC_REFERENCED_STORIES_NAME)
           stories_checklist.items.each do |item|
             name = item.name.strip
+            puts "Story name is #{name}"
             url = nil
             list = "Epic Backlog"
             sizing = ''
             board = 'Roadmap'
-            if name =~ /\[(.*)\]\((https?:\/\/trello\.com\/[^\)]+)\) \(([^\)]+)\) \(([^\)]+)\)/
+            if name =~ /\[(.*)\]\((https?:\/\/trello\.com\/[^\)]+)\) \(([^\)]+)\) (\[.*\])/
               name = $1.strip
               url = $2
               list = $3
+              puts "List is #{list}"
               board = $4
+              puts "Board name is #{board}"
             end
             if name =~ /\((\d+|\?)\)(.*)/
               sizing = $1
+              puts "Sizing is #{sizing}"
               name = $2
-
+              puts "Name is #{name}"
+              puts "List is #{list}"
               if list && sizing != '?'
                 sizing_i = sizing.to_i
                 if (list.match('^Sprint \d+') || list == 'Accepted' || list == 'Complete')
@@ -91,6 +96,7 @@ Corresponding Private Roadmap Board Epic: <a href='<%=secondary_epic_card.url%>'
                 cross_epic_card_names[item.name] = true
               end
             end
+            puts "Complete sizing is #{complete_sizing_total}"
 %>
 <tr>
 <%
@@ -127,5 +133,8 @@ Corresponding Private Roadmap Board Epic: <a href='<%=secondary_epic_card.url%>'
 <strong>Total Remaining: <%=cross_epic_remaining_sizing_total%></strong><br />
 
   </div><!-- /container -->
+  <div>
+  Last updated on: <%= Time.now.strftime("%m/%d/%Y %H:%M %z %Z") %>
+  </div>
 </body>
 </html>

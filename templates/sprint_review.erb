@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<title><%= trello.organization_name %> Sprints Detail</title>
+<script type='text/javascript' src='https://ajax.googleapis.com/ajax/libs/jquery/1.8.1/jquery.min.js?ver=3.8.1'></script>
+<link href="https://netdna.bootstrapcdn.com/bootstrap/3.1.1/css/bootstrap.min.css" type="text/css" rel="stylesheet" media="screen">
+<script src="https://netdna.bootstrapcdn.com/bootstrap/3.1.1/js/bootstrap.min.js"></script>
+<link href='https://fonts.googleapis.com/css?family=Open+Sans:400,300,600,800,700' rel='stylesheet' type='text/css'>
+<link href="stylesheets/trello.css" rel="stylesheet" type="text/css">
+<link rel="shortcut icon" href="favicon.ico" type="image/x-icon" />
+<meta name="viewport" content="width=device-width">
+<style type="text/css">
+
+.table>tbody>tr.in-progress>th {
+  background-color: #94cc75;
+  border-top: 1px solid #94cc75;
+}
+.table>tbody>tr.complete>th {
+  background-color: #94a55;
+  border-top: 1px solid #94ac55;
+}
+.table>tbody>tr.accepted>th {
+  background-color: #94cc35;
+  border-top: 1px solid #94cc35;
+}
+.table>tbody>tr.next>th {
+  background-color: #c4e3b3;
+  border-top: 1px solid #c4e3b3;
+}
+.table>tbody>tr.backlog>th {
+  background-color: #dbedfe;
+  border-top: 1px solid #dbedfe;
+}
+.table.table-rows>tbody>tr>th,
+.table.table-rows>tbody>tr>td {
+  padding: 15px; 
+}
+
+
+</style>
+
+</head>
+
+<body>
+  <div class="navbar navbar-default navbar-fixed-top" role="navigation">
+      <div class="container">
+        <div class="navbar-header">
+          <button type="button" class="navbar-toggle" data-toggle="collapse" data-target=".navbar-collapse">
+            <span class="sr-only">Toggle navigation</span>
+            <span class="icon-bar"></span>
+            <span class="icon-bar"></span>
+            <span class="icon-bar"></span>
+          </button>
+          <div class="brand" style="background: transparent url('<%=trello.logo%>') no-repeat left -5px; background-size: 100px auto">
+          </div>
+        </div>
+        <div class="navbar-collapse collapse">
+          <ul class="nav navbar-nav">
+              <% LINKS.each do |page_name, page_title|
+                if page_name != 'sprint_review' %>
+                  <li><a href='<%=page_name%>.html'><%=page_title%></a></li>
+                <%else%>
+                  <li><a class="active" href='<%=page_name%>.html'><%=page_title%></a></li>
+                <%end
+                end%>
+          </ul>
+        </div><!--/.nav-collapse -->
+      </div>
+    </div>
+
+  <div class="container">
+
+    <h2 class="visible-xs"><%= trello.organization_name %> Sprints Detail</h2>
+
+<div class="table-responsive">
+<table class="table table-condensed table-rows">
+<th/>
+<%
+      sprint_data = {}
+      team_url = {}
+      list_data = {}
+			trello.teams.keys.map{ |team_name| team_name.to_s }.each do |team_name|
+				sprint_data[team_name] = {}
+				team_url[team_name] = {}
+				trello.team_boards(team_name).each do |board|
+%>
+<th><h3 style="text-transform:uppercase"><a href="<%=board.url%>"><%=team_name%></a></h3>
+<%
+					team_url[team_name] = board.url
+					board.lists(:filter => [:all]).target.each do |list|
+						list_name = list.name
+                                                unless list.closed?
+							if list_name == "In Progress" || list_name == "Complete" || list_name == "Accepted"
+								list_data[list_name] = {} unless list_data[list_name]
+								cards = trello.list_cards(list)
+								unless cards.empty?
+									sprint_data[team_name][list_name] = [] unless sprint_data[team_name][list_name]
+									sprint_data[team_name][list_name] += cards
+								end
+								card_count = 0
+								card_count = cards.length unless cards.empty?
+								list_data[list_name][team_name] = 0 unless list_data[list_name][team_name]
+								list_data[list_name][team_name] = card_count
+							end
+						end
+					end
+          
+				end
+      end
+      list_data.keys.each do |list|
+%>
+<tr>
+<th><%=list%></th>
+<%
+        list_data[list].keys.each do |team_name|
+%>
+<td><%=list_data[list][team_name]%></td>
+<%
+        end
+%>
+</tr>	
+<%
+      end
+%>
+
+</table>
+</div
+  </div><!-- /container -->
+</body>
+</html>
+
